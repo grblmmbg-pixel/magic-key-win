@@ -46,28 +46,45 @@ fn execute_action(action: config::KeyAction) {
             }
         }
         config::KeyAction::VolumeUp => {
+            let mut handled = false;
             if let Ok(guard) = AUDIO_CONTROLLER.lock() {
                 if let Some(ref audio) = *guard {
                     if let Ok(vol) = audio.volume_up(0.02) {
                         if show_overlay {
                             overlay::show_volume(vol, false);
                         }
+                        handled = true;
                     }
+                }
+            }
+            if !handled {
+                media::send_media_key(VK_VOLUME_UP);
+                if show_overlay {
+                    overlay::show_action("Громкость +");
                 }
             }
         }
         config::KeyAction::VolumeDown => {
+            let mut handled = false;
             if let Ok(guard) = AUDIO_CONTROLLER.lock() {
                 if let Some(ref audio) = *guard {
                     if let Ok(vol) = audio.volume_down(0.02) {
                         if show_overlay {
                             overlay::show_volume(vol, false);
                         }
+                        handled = true;
                     }
+                }
+            }
+            if !handled {
+                media::send_media_key(VK_VOLUME_DOWN);
+                if show_overlay {
+                    overlay::show_action("Громкость -");
                 }
             }
         }
         config::KeyAction::VolumeMute => {
+            let mut handled = false;
             if let Ok(guard) = AUDIO_CONTROLLER.lock() {
                 if let Some(ref audio) = *guard {
                     if let Ok(muted) = audio.toggle_mute() {
@@ -75,7 +92,14 @@ fn execute_action(action: config::KeyAction) {
                         if show_overlay {
                             overlay::show_volume(vol, muted);
                         }
+                        handled = true;
                     }
+                }
+            }
+            if !handled {
+                media::send_media_key(VK_VOLUME_MUTE);
+                if show_overlay {
+                    overlay::show_action("Без звука");
                 }
             }
         }
@@ -435,6 +459,14 @@ unsafe extern "system" fn window_proc(
         }
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
+            LRESULT(0)
+        }
+        0x0219 => { // WM_DEVICECHANGE: audio or USB device attached/detached
+            if let Ok(guard) = AUDIO_CONTROLLER.lock() {
+                if let Some(ref audio) = *guard {
+                    audio.invalidate_cache();
+                }
+            }
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, w_param, l_param) },
