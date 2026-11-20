@@ -227,6 +227,20 @@ pub fn calculator() {
     }
 }
 
+pub fn launch_app(path: &str) {
+    let wide_path: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let _ = ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(wide_path.as_ptr()),
+            None,
+            None,
+            SW_SHOW,
+        );
+    }
+}
+
 pub fn send_f_key(num: u8) {
     if (1..=24).contains(&num) {
         let vk = VIRTUAL_KEY(0x70 + (num as u16 - 1));

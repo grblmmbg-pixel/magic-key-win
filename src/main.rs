@@ -157,6 +157,12 @@ fn execute_action(action: config::KeyAction) {
             }
             media::calculator();
         }
+        config::KeyAction::LaunchApp { ref path, ref display } => {
+            if show_overlay {
+                overlay::show_action(&format!("Запуск: {}", display));
+            }
+            media::launch_app(path);
+        }
         config::KeyAction::Hotkey { ctrl, alt, shift, win, vk, ref display } => {
             if show_overlay {
                 overlay::show_action(&format!("Хоткей: {}", display));

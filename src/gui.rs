@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
+use windows::Win32::UI::Controls::Dialogs::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -22,6 +23,7 @@ const ID_STATIC_KEY_TESTER: usize = 3007;
 
 const COMBO_BASE_ID: usize = 3100; // 3100..3118 (19 keys)
 const BTN_HOTKEY_BASE_ID: usize = 3200; // 3200..3218
+const BTN_APP_BASE_ID: usize = 3300; // 3300..3318
 
 pub const KEY_LIST: &[(&str, &str)] = &[
     ("f1", "F1"),
@@ -97,7 +99,7 @@ pub fn open_settings_window(mut current_config: AppConfig) {
             };
             let _ = RegisterClassW(&wc);
 
-            let win_w = 820;
+            let win_w = 880;
             let win_h = 540;
             let screen_w = GetSystemMetrics(SM_CXSCREEN);
             let screen_h = GetSystemMetrics(SM_CYSCREEN);
@@ -125,6 +127,38 @@ pub fn open_settings_window(mut current_config: AppConfig) {
                 let _ = SetForegroundWindow(hwnd);
                 *guard = Some(hwnd.0 as isize);
             }
+        }
+    }
+}
+
+pub fn pick_program_file(hwnd_owner: HWND) -> Option<(String, String)> {
+    let mut file_buf = [0u16; 1024];
+    let filter = w!("Программы и ярлыки (*.exe;*.lnk;*.bat;*.cmd)\0*.exe;*.lnk;*.bat;*.cmd\0Все файлы (*.*)\0*.*\0\0");
+    let title = w!("Выберите приложение для запуска кнопкой");
+
+    let mut ofn = OPENFILENAMEW {
+        lStructSize: std::mem::size_of::<OPENFILENAMEW>() as u32,
+        hwndOwner: hwnd_owner,
+        lpstrFilter: filter,
+        lpstrFile: PWSTR(file_buf.as_mut_ptr()),
+        nMaxFile: file_buf.len() as u32,
+        lpstrTitle: title,
+        Flags: OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST,
+        ..Default::default()
+    };
+
+    unsafe {
+        if GetOpenFileNameW(&mut ofn).as_bool() {
+            let len = file_buf.iter().position(|&c| c == 0).unwrap_or(file_buf.len());
+            let path = String::from_utf16_lossy(&file_buf[..len]);
+            let display = std::path::Path::new(&path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&path)
+                .to_string();
+            Some((path, display))
+        } else {
+            None
         }
     }
 }
@@ -187,7 +221,7 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             WS_CHILD | WS_VISIBLE | WINDOW_STYLE(0x00000003),
             460,
             12,
-            330,
+            380,
             20,
             Some(hwnd),
             Some(HMENU(ID_CHK_OVERLAY as _)),
@@ -211,7 +245,7 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             WS_CHILD | WS_VISIBLE,
             460,
             34,
-            330,
+            380,
             20,
             Some(hwnd),
             Some(HMENU(ID_STATIC_KEY_TESTER as _)),
@@ -232,7 +266,7 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
         let is_col2 = i >= 10;
         let row_idx = if is_col2 { i - 10 } else { i } as i32;
 
-        let col_x = if is_col2 { 420 } else { 20 };
+        let col_x = if is_col2 { 450 } else { 20 };
         let y_pos = 65 + row_idx * 33;
 
         let key_label = format!("{}:\0", key_name);
@@ -245,7 +279,7 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
                 WS_CHILD | WS_VISIBLE,
                 col_x,
                 y_pos + 4,
-                42,
+                38,
                 20,
                 Some(hwnd),
                 None,
@@ -263,9 +297,9 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
                 w!("COMBOBOX"),
                 None,
                 WS_CHILD | WS_VISIBLE | WS_VSCROLL | WINDOW_STYLE(0x0003),
-                col_x + 46,
+                col_x + 40,
                 y_pos,
-                255,
+                236,
                 350,
                 Some(hwnd),
                 Some(HMENU((COMBO_BASE_ID + i) as _)),
@@ -296,21 +330,22 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             }
         }
 
-        let hotkey_item_text = match &current_act {
+        let custom_item_text = match &current_act {
             KeyAction::Hotkey { display, .. } => format!("Хоткей: {}\0", display),
+            KeyAction::LaunchApp { display, .. } => format!("Запуск: {}\0", display),
             _ => "Задать свой хоткей...\0".to_string(),
         };
-        let wide_hk: Vec<u16> = hotkey_item_text.encode_utf16().collect();
+        let wide_custom: Vec<u16> = custom_item_text.encode_utf16().collect();
         unsafe {
             let _ = SendMessageW(
                 combo,
                 0x0143,
                 Some(WPARAM(0)),
-                Some(LPARAM(wide_hk.as_ptr() as _)),
+                Some(LPARAM(wide_custom.as_ptr() as _)),
             );
         }
 
-        if matches!(current_act, KeyAction::Hotkey { .. }) {
+        if matches!(current_act, KeyAction::Hotkey { .. } | KeyAction::LaunchApp { .. }) {
             select_idx = presets.len();
         }
 
@@ -329,7 +364,7 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
                 w!("BUTTON"),
                 w!("Хоткей"),
                 WS_CHILD | WS_VISIBLE,
-                col_x + 308,
+                col_x + 280,
                 y_pos,
                 64,
                 24,
@@ -342,6 +377,26 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
         unsafe {
             SendMessageW(btn_hk, WM_SETFONT, Some(WPARAM(font.0 as _)), Some(LPARAM(1)));
         }
+
+        let btn_app = unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("BUTTON"),
+                w!("Файл..."),
+                WS_CHILD | WS_VISIBLE,
+                col_x + 348,
+                y_pos,
+                64,
+                24,
+                Some(hwnd),
+                Some(HMENU((BTN_APP_BASE_ID + i) as _)),
+                None,
+                None,
+            ).unwrap()
+        };
+        unsafe {
+            SendMessageW(btn_app, WM_SETFONT, Some(WPARAM(font.0 as _)), Some(LPARAM(1)));
+        }
     }
 
     // Save, Reset, Cancel buttons
@@ -351,9 +406,9 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             w!("BUTTON"),
             w!("Сохранить"),
             WS_CHILD | WS_VISIBLE | WINDOW_STYLE(0x0001),
-            450,
+            490,
             455,
-            110,
+            115,
             32,
             Some(hwnd),
             Some(HMENU(ID_BTN_SAVE as _)),
@@ -371,9 +426,9 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             w!("BUTTON"),
             w!("Сбросить"),
             WS_CHILD | WS_VISIBLE,
-            575,
+            620,
             455,
-            110,
+            115,
             32,
             Some(hwnd),
             Some(HMENU(ID_BTN_RESET as _)),
@@ -391,9 +446,9 @@ unsafe fn build_controls(hwnd: HWND, cfg: &AppConfig) {
             w!("BUTTON"),
             w!("Закрыть"),
             WS_CHILD | WS_VISIBLE,
-            700,
+            750,
             455,
-            90,
+            100,
             32,
             Some(hwnd),
             Some(HMENU(ID_BTN_CANCEL as _)),
@@ -674,6 +729,35 @@ unsafe extern "system" fn settings_wndproc(
                     let target_idx = btn_id - BTN_HOTKEY_BASE_ID;
                     let &(_, key_name) = &KEY_LIST[target_idx];
                     open_hotkey_recorder(target_idx, key_name);
+                }
+                btn_id if (BTN_APP_BASE_ID..BTN_APP_BASE_ID + KEY_LIST.len()).contains(&btn_id) => {
+                    let target_idx = btn_id - BTN_APP_BASE_ID;
+                    let &(key_id, key_name) = &KEY_LIST[target_idx];
+                    if let Some((path, display)) = pick_program_file(hwnd) {
+                        let action = KeyAction::LaunchApp {
+                            path: path.clone(),
+                            display: display.clone(),
+                        };
+                        if let Ok(mut cfg_guard) = CURRENT_CONFIG.lock() {
+                            if let Some(ref mut cfg) = *cfg_guard {
+                                cfg.set_key_action(key_id, action);
+                            }
+                        }
+
+                        // Update combobox custom item text
+                        unsafe {
+                            if let Ok(combo) = GetDlgItem(Some(hwnd), (COMBO_BASE_ID + target_idx) as i32) {
+                                let last_idx = KeyAction::standard_presets().len();
+                                let combo_text = format!("Запуск: {}\0", display);
+                                let wide: Vec<u16> = combo_text.encode_utf16().collect();
+                                let _ = SendMessageW(combo, 0x0144, Some(WPARAM(last_idx)), Some(LPARAM(0))); // CB_DELETESTRING
+                                let _ = SendMessageW(combo, 0x0143, Some(WPARAM(0)), Some(LPARAM(wide.as_ptr() as _))); // CB_ADDSTRING
+                                let _ = SendMessageW(combo, 0x014E, Some(WPARAM(last_idx)), Some(LPARAM(0))); // CB_SETCURSEL
+                            }
+                        }
+
+                        crate::overlay::show_action(&format!("{}: запуск {}", key_name, display));
+                    }
                 }
                 _ => {}
             }

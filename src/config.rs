@@ -26,6 +26,10 @@ pub enum KeyAction {
         vk: u16,
         display: String,
     },
+    LaunchApp {
+        path: String,
+        display: String,
+    },
 }
 
 impl KeyAction {
@@ -60,6 +64,7 @@ impl KeyAction {
             KeyAction::Screenshot => "Скриншот экрана (Win+Shift+S)".to_string(),
             KeyAction::Calculator => "Калькулятор".to_string(),
             KeyAction::Hotkey { display, .. } => format!("Хоткей: {}", display),
+            KeyAction::LaunchApp { display, .. } => format!("Запуск: {}", display),
         }
     }
 
@@ -303,5 +308,17 @@ mod tests {
 
         cfg.set_key_action("f13", KeyAction::NativeF(5));
         assert_eq!(cfg.get_key_action("f13"), KeyAction::NativeF(5));
+    }
+
+    #[test]
+    fn test_launch_app_serialization() {
+        let action = KeyAction::LaunchApp {
+            path: r"C:\Windows\System32\notepad.exe".to_string(),
+            display: "notepad.exe".to_string(),
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        let deserialized: KeyAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(action, deserialized);
+        assert_eq!(deserialized.name(), "Запуск: notepad.exe");
     }
 }
